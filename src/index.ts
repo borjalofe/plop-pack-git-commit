@@ -1,4 +1,4 @@
-import type { NodePlopAPI } from "node-plop";
+import type { CustomActionFunction, NodePlopAPI } from "node-plop";
 import { gitCommitAction } from "./git-commit-action.js";
 import {
   type GitCommitActionConfig,
@@ -11,5 +11,5 @@ export type { GitCommitActionConfig, GitCommitConfig };
 
 export default function registerGitCommitPack(plop: NodePlopAPI): void {
   plop.setDefaultInclude({ actionTypes: true });
-  plop.setActionType("gitCommit", gitCommitAction);
+  plop.setActionType("gitCommit", gitCommitAction as CustomActionFunction);
 }

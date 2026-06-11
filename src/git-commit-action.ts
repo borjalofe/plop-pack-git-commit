@@ -65,7 +65,7 @@ async function hasStagedDiff(repoPath: string, verbose: boolean): Promise<boolea
 
 export async function gitCommitAction(
   _answers: unknown,
-  config: GitCommitActionConfig,
+  config: GitCommitActionConfig & Record<string, unknown>,
 ): Promise<string> {
   const parsed = gitCommitConfigSchema.safeParse({
     path: config.path ?? process.cwd(),
