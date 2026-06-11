@@ -117,6 +117,32 @@ pnpm test
 pnpm build
 ```
 
+## GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `CI` | push/PR to `main` | lint, test, build |
+| `Security audit` | push/PR + weekly | `pnpm audit` fails on high/critical |
+| `Dependency review` | pull requests | blocks PRs that add vulnerable deps |
+| `CodeQL` | push/PR + weekly | static analysis for TypeScript/JavaScript |
+| `Release` | GitHub Release published | verify tag, `pnpm check`, publish to npm |
+
+Dependabot opens weekly PRs to update dependencies.
+
+### Releasing to npm
+
+1. Bump `version` in `package.json` (e.g. `0.1.1`).
+2. Commit, push to `main`, and create a GitHub Release with tag `v0.1.1` (must match `package.json`).
+3. The `Release` workflow runs `pnpm check` and publishes with [npm provenance](https://docs.npmjs.com/generating-provenance-statements).
+
+Repository secret required:
+
+| Secret | Purpose |
+|--------|---------|
+| `NPM_TOKEN` | npm automation token with publish access to this package |
+
+Enable **Dependabot alerts** and **Code scanning** under repository Settings → Code security.
+
 ## License
 
 MIT
