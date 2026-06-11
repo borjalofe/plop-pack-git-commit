@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { pushToOrigin } from "./lib/git-push.js";
 import { runGit } from "./lib/run-git.js";
 import { type GitCommitActionConfig, gitCommitConfigSchema } from "./schemas/git-commit-config.js";
 
@@ -109,5 +110,15 @@ export async function gitCommitAction(
 
   await runGit(["commit", "-m", message], { cwd: repoPath, verbose });
 
-  return `Committed: ${message}`;
+  const pushResult = await pushToOrigin(repoPath, verbose);
+
+  if (pushResult.ok) {
+    return `Committed and pushed to origin: ${message}`;
+  }
+
+  if (verbose) {
+    console.warn(pushResult.warning);
+  }
+
+  return pushResult.warning;
 }
