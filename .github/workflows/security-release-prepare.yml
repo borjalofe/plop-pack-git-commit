@@ -1,0 +1,81 @@
+name: Security release prepare
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-security-pr:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      is_security: ${{ steps.check.outputs.is_security }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Dependabot security PR
+        id: check
+        env:
+          PR_USER: ${{ github.event.pull_request.user.login }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+        run: |
+          if node scripts/security-release.mjs check-pr; then
+            echo "is_security=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_security=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  prepare:
+    needs: check-security-pr
+    if: needs.check-security-pr.outputs.is_security == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Prepare security release changes
+        id: prepare
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/security-release.mjs prepare
+
+      - name: Create security release pull request
+        if: steps.prepare.outputs.version != ''
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: security-release/${{ steps.prepare.outputs.version }}
+          delete-branch: true
+          title: Security release ${{ steps.prepare.outputs.version }}
+          labels: security-release
+          commit-message: "chore(release): security release ${{ steps.prepare.outputs.version }}"
+          body: |
+            Automated security release prepared after merging Dependabot PR #${{ github.event.pull_request.number }}.
+
+            - Patch version bump (${{ steps.prepare.outputs.version }})
+            - CHANGELOG.md updated with packages and advisories
+            - `pnpm audit` confirmed a lower vulnerability count
+
+            Merge this PR to publish the GitHub Release and npm package.
+          add-paths: |
+            package.json
+            CHANGELOG.md
