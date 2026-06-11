@@ -129,7 +129,21 @@ pnpm build
 
 Dependabot opens weekly PRs to update dependencies.
 
-### Releasing to npm
+### Security releases (automated)
+
+When a **Dependabot security PR** is merged to `main`:
+
+1. `Security release prepare` checks:
+   - PR author is `dependabot[bot]`
+   - PR body/labels reference security advisories (GHSA/CVE)
+   - `pnpm audit` shows fewer vulnerabilities than before the merge
+2. If all pass, it opens a review PR (`security-release/x.y.z`) that bumps the **patch** version (`z`) and prepends a **Security** section to `CHANGELOG.md` (packages, versions, advisories).
+3. If audit does not improve, no release PR is created.
+4. When you merge the security release PR, `Security release publish` tags `vx.y.z`, creates a GitHub Release titled `Security release x.y.z`, and publishes to npm.
+
+Manual feature releases still use the `Release` workflow (GitHub Release UI). Bot-authored security releases use the dedicated publish workflow to avoid duplicate npm publishes.
+
+### Releasing to npm (manual)
 
 1. Bump `version` in `package.json` (e.g. `0.1.1`).
 2. Commit, push to `main`, and create a GitHub Release with tag `v0.1.1` (must match `package.json`).
