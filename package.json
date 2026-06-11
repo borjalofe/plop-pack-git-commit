@@ -45,6 +45,10 @@
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
