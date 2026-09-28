@@ -4,7 +4,24 @@ PlopJS action pack that stages changes, creates a git commit, and pushes to `ori
 
 Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-init), but focused on committing existing or generated files in an already initialized repository.
 
-## Installation
+## Problem
+
+`plop-pack-git-init` covers "create a repo". After generators write files into a vault or project that already has git, I still had to stage, commit, and push by hand. That break in the flow is exactly where Plop should finish the job.
+
+## Who uses it
+
+- Me, from vault / Plop tooling
+- Anyone installing the package from npm
+
+## Scope
+
+**Includes:** Plop action `gitCommit` (stage specific files or `all`, commit, push `origin HEAD`), Zod schema export, CI + security release automation.
+
+**Does not include:** configurable remote/branch names today; fail-hard push; hosting-specific remotes (`forgejo` / `github` as remote names).
+
+## How to run it
+
+### Install
 
 ```bash
 pnpm add plop-pack-git-commit
@@ -12,7 +29,7 @@ pnpm add plop-pack-git-commit
 npm i plop-pack-git-commit
 ```
 
-## Usage
+### Usage
 
 ```js
 module.exports = function (plop) {
@@ -89,8 +106,6 @@ git push origin HEAD
 
 ## Schema export
 
-You can validate action configs outside Plop:
-
 ```ts
 import { gitCommitConfigSchema } from "plop-pack-git-commit";
 
@@ -107,11 +122,50 @@ const result = gitCommitConfigSchema.safeParse({
 - Git user identity configured (`user.name`, `user.email`)
 - Remote `origin` configured when you expect push to succeed
 
-## Development
+## Decisions
+
+**Why always `git push origin HEAD`?**
+
+Keeps the action tiny and predictable for the common case (one remote named `origin`). Homelab clones that use remotes `forgejo` / `github` instead of `origin` will get a warning and a local commit — documented limitation, not a silent success.
+
+**Why `skipEmpty` default `true`?**
+
+Generators often run when the working tree did not change. Failing the whole Plop run for "nothing to commit" is worse DX than resolving cleanly.
+
+**Why warning on push failure instead of fail-hard?**
+
+Commit already happened. Aborting the generator after a network blip strands the user mid-flow. CI that needs strict push should call git itself or wrap the action.
+
+**Alternatives considered:** husky-only hooks (do not help Plop mid-generator); GitHub Action for commit (wrong layer); `simple-git` vs `child_process` (pack uses explicit git CLI for transparency).
+
+## Trade-offs and limitations
+
+Hardcoded `origin` vs multi-remote homelab naming. Soft push failures vs strict CI. Package optimises interactive generators, not gatekeeping pipelines.
+
+## Evidence of quality
 
 ```bash
 pnpm install
 pnpm check   # lint + test + build
+```
+
+Also: Vitest, Biome, lefthook, GitHub Actions (CI, CodeQL, audit, Dependabot, release with npm provenance).
+
+## Lessons learned
+
+Security-release automation (Dependabot → patch bump → changelog → publish) taught me to separate "bot security release" from "human feature release" so provenance and tags do not double-fire.
+
+## Next steps
+
+1. Optional `remote` / `ref` config for non-`origin` setups.
+2. Optional `failOnPushError` for CI-strict consumers.
+3. Document a vault Plop example that matches remotes `forgejo`/`github`.
+
+## Development
+
+```bash
+pnpm install
+pnpm check
 pnpm lint
 pnpm test
 pnpm build
@@ -133,27 +187,21 @@ Dependabot opens weekly PRs to update dependencies.
 
 When a **Dependabot security PR** is merged to `main`:
 
-1. `Security release prepare` checks:
-   - PR author is `dependabot[bot]`
-   - PR body/labels reference security advisories (GHSA/CVE)
-   - `pnpm audit` shows fewer vulnerabilities than before the merge
-2. If all pass, it opens a review PR (`security-release/x.y.z`) that bumps the **patch** version (`z`) and prepends a **Security** section to `CHANGELOG.md` (packages, versions, advisories).
-3. If audit does not improve, no release PR is created.
-4. When you merge the security release PR, `Security release publish` tags `vx.y.z`, creates a GitHub Release titled `Security release x.y.z`, and publishes to npm.
+1. `Security release prepare` checks author, advisory signals, and that `pnpm audit` improved.
+2. Opens a review PR (`security-release/x.y.z`) with patch bump + CHANGELOG **Security** section.
+3. Merge triggers `Security release publish` (tag, GitHub Release, npm).
 
-Manual feature releases still use the `Release` workflow (GitHub Release UI). Bot-authored security releases use the dedicated publish workflow to avoid duplicate npm publishes.
+Manual feature releases still use the `Release` workflow (GitHub Release UI).
 
 ### Releasing to npm (manual)
 
-1. Bump `version` in `package.json` (e.g. `0.1.1`).
-2. Commit, push to `main`, and create a GitHub Release with tag `v0.1.1` (must match `package.json`).
-3. The `Release` workflow runs `pnpm check` and publishes with [npm provenance](https://docs.npmjs.com/generating-provenance-statements).
-
-Repository secret required:
+1. Bump `version` in `package.json`.
+2. Commit, push to `main`, create GitHub Release with matching `vX.Y.Z` tag.
+3. `Release` workflow runs `pnpm check` and publishes with [npm provenance](https://docs.npmjs.com/generating-provenance-statements).
 
 | Secret | Purpose |
 |--------|---------|
-| `NPM_TOKEN` | npm automation token with publish access to this package |
+| `NPM_TOKEN` | npm automation token with publish access |
 
 Enable **Dependabot alerts** and **Code scanning** under repository Settings → Code security.
 
