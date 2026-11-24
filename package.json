@@ -1,6 +1,6 @@
 {
   "name": "plop-pack-git-commit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PlopJS action pack to stage, commit, and push changes with git",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -34,7 +34,7 @@
     "node-plop": ">=0.25.0"
   },
   "dependencies": {
-    "zod": "^3.24.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

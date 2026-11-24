@@ -14,10 +14,10 @@ async function isGitRepository(repoPath: string): Promise<boolean> {
 }
 
 function formatZodError(error: {
-  issues: Array<{ path: Array<string | number>; message: string }>;
+  issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }>;
 }) {
   return error.issues
-    .map((issue) => `${issue.path.join(".") || "config"}: ${issue.message}`)
+    .map((issue) => `${issue.path.map(String).join(".") || "config"}: ${issue.message}`)
     .join("; ");
 }
 
