@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `gitCommit` now publishes the active branch to the upstream configured for
+  that branch (`branch.<name>.remote` and `branch.<name>.merge`) instead of
+  always running `git push origin HEAD`. The remote name and the remote branch
+  name are read from git configuration, never assumed, and the branch is pushed
+  with an explicit single-ref refspec so no other references are published. The
+  push is skipped with a clear warning, and no destination is invented, on a
+  detached HEAD, a branch with no configured upstream, a local tracking ref
+  (`remote = .`), or a missing remote; the local commit is always preserved.
+  This stops the action from pushing to a wrong or invented `origin` when the
+  branch tracks a differently named remote or remote branch.
+
 ## [0.1.1] - 2026-11-24
 
 ### Security

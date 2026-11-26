@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { pushToOrigin } from "./lib/git-push.js";
+import { pushCurrentBranch } from "./lib/git-push.js";
 import { runGit } from "./lib/run-git.js";
 import { type GitCommitActionConfig, gitCommitConfigSchema } from "./schemas/git-commit-config.js";
 
@@ -110,10 +110,10 @@ export async function gitCommitAction(
 
   await runGit(["commit", "-m", message], { cwd: repoPath, verbose });
 
-  const pushResult = await pushToOrigin(repoPath, verbose);
+  const pushResult = await pushCurrentBranch(repoPath, verbose);
 
   if (pushResult.ok) {
-    return `Committed and pushed to origin: ${message}`;
+    return `Committed and pushed to ${pushResult.remote}/${pushResult.remoteBranch}: ${message}`;
   }
 
   if (verbose) {
