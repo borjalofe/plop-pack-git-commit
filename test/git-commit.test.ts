@@ -172,11 +172,22 @@ describe("gitCommitAction", () => {
     ).rejects.toThrow("Invalid gitCommit config");
   });
 
-  it("pushes to origin after a successful commit", async () => {
+  async function setUpstream(
+    repoPath: string,
+    branch: string,
+    remote: string,
+    mergeRef: string,
+  ): Promise<void> {
+    await runGit(["config", `branch.${branch}.remote`, remote], { cwd: repoPath });
+    await runGit(["config", `branch.${branch}.merge`, mergeRef], { cwd: repoPath });
+  }
+
+  it("publishes the active branch to its configured upstream, honoring a non-origin remote and a different remote branch name", async () => {
     const bareDir = await createBareRemote();
     const repoPath = await createTempDir("plop-git-commit-repo-");
-    await initGitRepo(repoPath);
-    await runGit(["remote", "add", "origin", bareDir], { cwd: repoPath });
+    await initGitRepo(repoPath, "work");
+    await runGit(["remote", "add", "upstream", bareDir], { cwd: repoPath });
+    await setUpstream(repoPath, "work", "upstream", "refs/heads/published");
 
     await writeFile(path.join(repoPath, "file.txt"), "content\n");
 
@@ -189,14 +200,24 @@ describe("gitCommitAction", () => {
       },
     );
 
-    expect(message).toContain("Committed and pushed to origin");
-    const bareHead = await runGit(["show-ref", "--heads", "main"], { cwd: bareDir });
-    expect(bareHead.stdout.trim()).not.toBe("");
+    expect(message).toContain("Committed and pushed to upstream/published");
+
+    const published = await runGit(["log", "-1", "--pretty=format:%s", "published"], {
+      cwd: bareDir,
+    });
+    expect(published.stdout.trim()).toBe("first commit");
+
+    await expect(
+      runGit(["rev-parse", "--verify", "refs/heads/work"], { cwd: bareDir }),
+    ).rejects.toThrow();
   });
 
-  it("warns but does not throw when origin is missing", async () => {
+  it("does not fall back to origin when the active branch has no configured upstream", async () => {
+    const bareDir = await createBareRemote();
     const repoPath = await createTempDir("plop-git-commit-repo-");
     await initGitRepo(repoPath);
+    await runGit(["remote", "add", "origin", bareDir], { cwd: repoPath });
+
     await writeFile(path.join(repoPath, "file.txt"), "content\n");
 
     const message = await gitCommitAction(
@@ -208,15 +229,63 @@ describe("gitCommitAction", () => {
       },
     );
 
-    expect(message).toContain("Committed; push skipped");
-    const fileContents = await readFile(path.join(repoPath, "file.txt"), "utf8");
-    expect(fileContents).toBe("content\n");
+    expect(message).toContain("push skipped: no upstream configured");
+    await expect(
+      runGit(["rev-parse", "--verify", "refs/heads/main"], { cwd: bareDir }),
+    ).rejects.toThrow();
   });
 
-  it("warns but does not throw when push fails", async () => {
+  it("skips the push on a detached HEAD without inventing a destination", async () => {
     const repoPath = await createTempDir("plop-git-commit-repo-");
     await initGitRepo(repoPath);
-    await runGit(["remote", "add", "origin", "/definitely/not/a/git/remote"], { cwd: repoPath });
+    await writeFile(path.join(repoPath, "first.txt"), "one\n");
+    await runGit(["add", "-A"], { cwd: repoPath });
+    await runGit(["commit", "-m", "base"], { cwd: repoPath });
+    const head = await runGit(["rev-parse", "HEAD"], { cwd: repoPath });
+    await runGit(["checkout", head.stdout.trim()], { cwd: repoPath });
+
+    await writeFile(path.join(repoPath, "second.txt"), "two\n");
+
+    const message = await gitCommitAction(
+      {},
+      {
+        path: repoPath,
+        message: "detached commit",
+        files: "second.txt",
+      },
+    );
+
+    expect(message).toContain("push skipped: HEAD is detached");
+    const log = await runGit(["log", "-1", "--pretty=format:%s"], { cwd: repoPath });
+    expect(log.stdout.trim()).toBe("detached commit");
+  });
+
+  it("skips the push when the configured remote does not exist", async () => {
+    const repoPath = await createTempDir("plop-git-commit-repo-");
+    await initGitRepo(repoPath);
+    await setUpstream(repoPath, "main", "ghost", "refs/heads/main");
+    await writeFile(path.join(repoPath, "file.txt"), "content\n");
+
+    const message = await gitCommitAction(
+      {},
+      {
+        path: repoPath,
+        message: "missing remote",
+        files: "file.txt",
+      },
+    );
+
+    expect(message).toContain("configured remote ghost");
+    expect(message).toContain("does not exist");
+    const log = await runGit(["log", "-1", "--pretty=format:%s"], { cwd: repoPath });
+    expect(log.stdout.trim()).toBe("missing remote");
+  });
+
+  it("warns but does not throw when the push to the configured upstream fails", async () => {
+    const repoPath = await createTempDir("plop-git-commit-repo-");
+    await initGitRepo(repoPath);
+    await runGit(["remote", "add", "backup", "/definitely/not/a/git/remote"], { cwd: repoPath });
+    await setUpstream(repoPath, "main", "backup", "refs/heads/main");
     await writeFile(path.join(repoPath, "file.txt"), "content\n");
 
     const message = await gitCommitAction(

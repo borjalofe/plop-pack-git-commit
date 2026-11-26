@@ -1,6 +1,6 @@
 # plop-pack-git-commit
 
-PlopJS action pack that stages changes, creates a git commit, and pushes to `origin`.
+PlopJS action pack that stages changes, creates a git commit, and publishes the active branch to its configured upstream.
 
 Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-init), but focused on committing existing or generated files in an already initialized repository.
 
@@ -15,9 +15,9 @@ Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-ini
 
 ## Scope
 
-**Includes:** Plop action `gitCommit` (stage specific files or `all`, commit, push `origin HEAD`), Zod schema export, CI + security release automation.
+**Includes:** Plop action `gitCommit` (stage specific files or `all`, commit, publish the active branch to its configured upstream), Zod schema export, CI + security release automation.
 
-**Does not include:** configurable remote/branch names today; fail-hard push; hosting-specific remotes (`forgejo` / `github` as remote names).
+**Does not include:** fail-hard push; automatic upstream creation (the action never runs `push -u` or invents a destination); force push.
 
 ## How to run it
 
@@ -95,14 +95,35 @@ Provide either `files` or `all: true`. They are mutually exclusive.
 
 ## Push behavior
 
-After a successful commit, the action always runs:
+After a successful commit, the action publishes only the active branch to the
+upstream destination configured for that branch. It reads the destination from
+git itself:
 
 ```bash
-git push origin HEAD
+remote=$(git config --get branch.<current>.remote)
+merge=$(git config --get branch.<current>.merge)   # e.g. refs/heads/<remote-branch>
+git push "$remote" "refs/heads/<current>:$merge"
 ```
 
-- If there was nothing to commit (`skipEmpty`), push is skipped.
-- If `origin` is missing or push fails, the action resolves with a warning instead of failing the generator. The commit remains local.
+The remote name and the remote branch name are never assumed: a branch that
+tracks `upstream`, `forgejo`, or `github`, or whose remote branch has a
+different name, is published to exactly that destination. The explicit
+single-ref refspec means no other references are pushed regardless of your
+`push.default`. The action never forces and never changes your git
+configuration.
+
+The push is skipped with a clear warning, and no destination is invented, when:
+
+- there was nothing to commit (`skipEmpty`);
+- `HEAD` is detached (no branch to publish);
+- the active branch has no configured upstream (`branch.<name>.remote` /
+  `branch.<name>.merge`);
+- the branch tracks a local ref (`remote = .`);
+- the configured remote does not exist.
+
+If the push itself fails (network, rejection), the action resolves with a
+warning instead of failing the generator. In every skip or failure case the
+local commit is preserved.
 
 ## Schema export
 
@@ -120,13 +141,18 @@ const result = gitCommitConfigSchema.safeParse({
 
 - `git` available in `PATH`
 - Git user identity configured (`user.name`, `user.email`)
-- Remote `origin` configured when you expect push to succeed
+- The active branch has an upstream configured (`git push -u <remote> <branch>` once, or `git branch --set-upstream-to`) when you expect push to succeed
 
 ## Decisions
 
-**Why always `git push origin HEAD`?**
+**Why publish to the configured upstream instead of `git push origin HEAD`?**
 
-Keeps the action tiny and predictable for the common case (one remote named `origin`). Homelab clones that use remotes `forgejo` / `github` instead of `origin` will get a warning and a local commit — documented limitation, not a silent success.
+The branch already records where it should go (`branch.<name>.remote` and
+`branch.<name>.merge`). Honoring it works for clones whose remote is
+`forgejo` / `github` or whose remote branch has a different name, and it avoids
+pushing to a wrong or invented `origin/<same-name>` destination. A branch with
+no upstream gets a warning and a local commit, not a silent push to a guessed
+remote.
 
 **Why `skipEmpty` default `true`?**
 
@@ -140,7 +166,9 @@ Commit already happened. Aborting the generator after a network blip strands the
 
 ## Trade-offs and limitations
 
-Hardcoded `origin` vs multi-remote homelab naming. Soft push failures vs strict CI. Package optimises interactive generators, not gatekeeping pipelines.
+The branch must have an upstream configured for the push to run; the action
+never creates one. Soft push failures vs strict CI. Package optimises
+interactive generators, not gatekeeping pipelines.
 
 ## Evidence of quality
 
@@ -157,9 +185,9 @@ Security-release automation (Dependabot → patch bump → changelog → publish
 
 ## Next steps
 
-1. Optional `remote` / `ref` config for non-`origin` setups.
+1. Optional explicit `remote` / `ref` config to override the branch upstream.
 2. Optional `failOnPushError` for CI-strict consumers.
-3. Document a vault Plop example that matches remotes `forgejo`/`github`.
+3. Optional opt-in to create the upstream (`push -u`) when none is configured.
 
 ## Development
 
