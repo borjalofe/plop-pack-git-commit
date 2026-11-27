@@ -171,7 +171,7 @@ describe("gitCommitAction hooks", () => {
     expect(head.stdout.trim()).toBe("initial");
   });
 
-  it("executes the hooks configured through core.hooksPath", async () => {
+  async function runConfiguredHooksPathCase(verbose: boolean): Promise<void> {
     const repoPath = await createTempDir("plop-git-hooks-repo-");
     await initGitRepo(repoPath);
     await writeFile(path.join(repoPath, "tracked.txt"), "initial\n");
@@ -185,6 +185,18 @@ describe("gitCommitAction hooks", () => {
     );
     await runGit(["config", "--local", "core.hooksPath", "custom-hooks"], { cwd: repoPath });
 
+    const streamed: string[] = [];
+    const originalStdout = process.stdout.write.bind(process.stdout);
+    const originalStderr = process.stderr.write.bind(process.stderr);
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      streamed.push(String(chunk));
+      return originalStdout(chunk as never);
+    }) as typeof process.stdout.write);
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      streamed.push(String(chunk));
+      return originalStderr(chunk as never);
+    }) as typeof process.stderr.write);
+
     const error = await rejectionOf(
       gitCommitAction(
         {},
@@ -192,6 +204,7 @@ describe("gitCommitAction hooks", () => {
           path: repoPath,
           message: "rejected by hooks path",
           files: "tracked.txt",
+          verbose,
         },
       ),
     );
@@ -202,8 +215,24 @@ describe("gitCommitAction hooks", () => {
     expect(error.message).toContain("inspect git status");
     expect(error.message).toContain("run the gitCommit action again");
 
+    const streamedText = streamed.join("");
+    expect(streamedText).not.toMatch(/^custom-hooks(\n|$)/m);
+    if (verbose) {
+      expect(streamedText).toContain("CUSTOM_HOOKS_DIR_REJECTION");
+    }
+
     const head = await runGit(["log", "-1", "--pretty=format:%s"], { cwd: repoPath });
     expect(head.stdout.trim()).toBe("initial");
+    const staged = await runGit(["diff", "--cached", "--name-only"], { cwd: repoPath });
+    expect(staged.stdout.trim()).toBe("tracked.txt");
+  }
+
+  it("executes the hooks configured through core.hooksPath", async () => {
+    await runConfiguredHooksPathCase(false);
+  });
+
+  it("executes the hooks configured through core.hooksPath in verbose mode", async () => {
+    await runConfiguredHooksPathCase(true);
   });
 
   it("does not attribute a non-hook commit failure to the pre-commit hook", async () => {

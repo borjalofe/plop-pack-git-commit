@@ -11,12 +11,14 @@ const GIT_ISSUED_FAILURE = /^\s*(?:fatal|error): /m;
  * itself executes the configured hooks and honors `core.hooksPath`. Nothing
  * here runs hooks manually or bypasses them.
  */
-async function preCommitHookExists(repoPath: string, verbose: boolean): Promise<boolean> {
+async function preCommitHookExists(repoPath: string): Promise<boolean> {
   let hooksPath = DEFAULT_HOOKS_DIR;
   try {
     const { stdout } = await runGit(["config", "--get", "core.hooksPath"], {
       cwd: repoPath,
-      verbose,
+      // Always quiet: verbose mode must not stream this internal lookup's
+      // configuration value, and its result must not be lost to streaming.
+      capture: true,
     });
     const configured = stdout.trim();
     if (configured.length > 0) {
@@ -59,7 +61,7 @@ async function commitRejection(
 
   let headline: string;
   let recovery: string;
-  if (!gitIssued && (await preCommitHookExists(repoPath, verbose))) {
+  if (!gitIssued && (await preCommitHookExists(repoPath))) {
     headline = "git commit was rejected by the pre-commit hook";
     recovery =
       "Fix the hook issues, inspect git status, re-stage any files the hook modified, then run the gitCommit action again.";
