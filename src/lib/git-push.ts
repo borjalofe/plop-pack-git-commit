@@ -5,6 +5,16 @@ export type PushResult =
   | { ok: false; warning: string };
 
 /**
+ * Structured outcome of publishing the active branch to its configured
+ * upstream. On skip and failure cases `skipped` distinguishes "the push was
+ * never attempted" from "the push was attempted and failed", and `detail` is
+ * the plain explanation without any action-level message prefix.
+ */
+export type UpstreamPushOutcome =
+  | { ok: true; remote: string; remoteBranch: string }
+  | { ok: false; skipped: boolean; detail: string };
+
+/**
  * Current branch name, or null when HEAD is detached.
  */
 async function currentBranch(repoPath: string, verbose: boolean): Promise<string | null> {
@@ -61,16 +71,17 @@ function shortRemoteBranch(mergeRef: string): string {
  * `push.default`. The push never forces and never changes git configuration.
  *
  * On a detached HEAD, a missing upstream, a local-only tracking ref, or a
- * missing remote, the push is skipped with a clear warning and no destination
- * is invented. The local commit is always preserved.
+ * missing remote, the push is skipped with no destination invented. On a push
+ * error the outcome is a failure instead of a thrown error, so the caller
+ * decides how to report it. The local repository is never modified.
  */
-export async function pushCurrentBranch(repoPath: string, verbose = false): Promise<PushResult> {
+export async function pushActiveBranchToUpstream(
+  repoPath: string,
+  verbose = false,
+): Promise<UpstreamPushOutcome> {
   const branch = await currentBranch(repoPath, verbose);
   if (branch === null) {
-    return {
-      ok: false,
-      warning: "Committed; push skipped: HEAD is detached, no branch to publish",
-    };
+    return { ok: false, skipped: true, detail: "HEAD is detached, no branch to publish" };
   }
 
   const remote = await gitConfigGet(repoPath, `branch.${branch}.remote`, verbose);
@@ -79,21 +90,24 @@ export async function pushCurrentBranch(repoPath: string, verbose = false): Prom
   if (remote === null || mergeRef === null) {
     return {
       ok: false,
-      warning: `Committed; push skipped: no upstream configured for branch ${branch}`,
+      skipped: true,
+      detail: `no upstream configured for branch ${branch}`,
     };
   }
 
   if (remote === ".") {
     return {
       ok: false,
-      warning: `Committed; push skipped: branch ${branch} tracks a local ref, not a remote`,
+      skipped: true,
+      detail: `branch ${branch} tracks a local ref, not a remote`,
     };
   }
 
   if (!(await remoteExists(repoPath, remote, verbose))) {
     return {
       ok: false,
-      warning: `Committed; push skipped: configured remote ${remote} for branch ${branch} does not exist`,
+      skipped: true,
+      detail: `configured remote ${remote} for branch ${branch} does not exist`,
     };
   }
 
@@ -104,10 +118,25 @@ export async function pushCurrentBranch(repoPath: string, verbose = false): Prom
     });
     return { ok: true, remote, remoteBranch: shortRemoteBranch(mergeRef) };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      warning: `Committed; push failed: ${message}`,
+      skipped: false,
+      detail: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Combined-action view of `pushActiveBranchToUpstream`: soft warnings use the
+ * gitCommit wording ("Committed; push skipped/failed: ...") because the branch
+ * has already been committed when the push step runs.
+ */
+export async function pushCurrentBranch(repoPath: string, verbose = false): Promise<PushResult> {
+  const outcome = await pushActiveBranchToUpstream(repoPath, verbose);
+  if (outcome.ok) {
+    return outcome;
+  }
+
+  const stage = outcome.skipped ? "push skipped" : "push failed";
+  return { ok: false, warning: `Committed; ${stage}: ${outcome.detail}` };
 }
