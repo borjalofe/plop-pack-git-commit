@@ -1,4 +1,4 @@
-# plop-pack-git-commit
+# plop-actions-git
 
 PlopJS action pack that stages changes, creates a git commit, and publishes the active branch to its configured upstream.
 
@@ -24,16 +24,16 @@ Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-ini
 ### Install
 
 ```bash
-pnpm add plop-pack-git-commit
+pnpm add plop-actions-git
 # or
-npm i plop-pack-git-commit
+npm i plop-actions-git
 ```
 
 ### Usage
 
 ```js
 module.exports = function (plop) {
-  plop.load("plop-pack-git-commit");
+  plop.load("plop-actions-git");
 
   plop.setGenerator("example", {
     prompts: [],
@@ -128,7 +128,7 @@ local commit is preserved.
 ## Schema export
 
 ```ts
-import { gitCommitConfigSchema } from "plop-pack-git-commit";
+import { gitCommitConfigSchema } from "plop-actions-git";
 
 const result = gitCommitConfigSchema.safeParse({
   path: process.cwd(),
