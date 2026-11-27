@@ -1,6 +1,6 @@
-# plop-pack-git-commit
+# plop-actions-git
 
-PlopJS action pack that stages changes, creates a git commit, and publishes the active branch to its configured upstream.
+PlopJS action pack for git commits and pushes, with the steps available separately: `commit` to stage and create a commit, `push` to publish the active branch to its configured upstream, and `commit-and-push` to keep the combined flow.
 
 Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-init), but focused on committing existing or generated files in an already initialized repository.
 
@@ -15,7 +15,7 @@ Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-ini
 
 ## Scope
 
-**Includes:** Plop action `gitCommit` (stage specific files or `all`, commit, publish the active branch to its configured upstream), Zod schema export, CI + security release automation.
+**Includes:** Plop actions `commit` (stage and commit, never push), `push` (publish the active branch to its configured upstream, never commit), `commit-and-push` (both steps) with the `gitCommit` compatibility alias, Zod schema exports, CI + security release automation.
 
 **Does not include:** fail-hard push; automatic upstream creation (the action never runs `push -u` or invents a destination); force push.
 
@@ -24,16 +24,16 @@ Inspired by [plop-pack-git-init](https://github.com/crutchcorn/plop-pack-git-ini
 ### Install
 
 ```bash
-pnpm add plop-pack-git-commit
+pnpm add plop-actions-git
 # or
-npm i plop-pack-git-commit
+npm i plop-actions-git
 ```
 
 ### Usage
 
 ```js
 module.exports = function (plop) {
-  plop.load("plop-pack-git-commit");
+  plop.load("plop-actions-git");
 
   plop.setGenerator("example", {
     prompts: [],
@@ -44,7 +44,7 @@ module.exports = function (plop) {
         template: "# {{name}}\n",
       },
       {
-        type: "gitCommit",
+        type: "commit-and-push",
         path: process.cwd(),
         message: "docs: add {{name}} note",
         files: "notes/{{name}}.md",
@@ -54,24 +54,35 @@ module.exports = function (plop) {
 };
 ```
 
+### Registered actions
+
+| Action | Stages | Creates a commit | Pushes |
+|--------|--------|------------------|--------|
+| `commit` | `files` or `all` | yes | never |
+| `push` | never | never | yes |
+| `commit-and-push` | `files` or `all` | yes | yes |
+| `gitCommit` | `files` or `all` | yes | yes |
+
+`push` only publishes commits that already exist; pending working-tree changes are ignored. `gitCommit` is kept for existing generators and behaves exactly like `commit-and-push`.
+
 ### Commit specific file(s)
 
 ```js
 {
-  type: "gitCommit",
+  type: "commit",
   path: process.cwd(),
   message: "docs: add contact note",
   files: "notes/contacto.md",
 }
 ```
 
-`files` accepts a string or an array of strings.
+`files` accepts a string or an array of strings. The same options apply to `commit-and-push` when you need the push step too. The commit action never pushes: it does not read `branch.<name>.remote` and does not touch remotes.
 
 ### Commit everything pending
 
 ```js
 {
-  type: "gitCommit",
+  type: "commit",
   path: process.cwd(),
   message: "chore: sync generated files",
   all: true,
@@ -80,7 +91,20 @@ module.exports = function (plop) {
 
 This runs `git add -A` before committing.
 
+### Push only, without committing
+
+```js
+{
+  type: "push",
+  path: process.cwd(),
+}
+```
+
+The push action never stages and never creates a commit, even when the working tree has pending changes. It publishes the branch's configured upstream and resolves with a warning when there is no destination (missing upstream, detached HEAD, missing remote) instead of inventing one.
+
 ## Options
+
+The `commit`, `commit-and-push` and `gitCommit` actions accept the same options:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -93,10 +117,20 @@ This runs `git add -A` before committing.
 
 Provide either `files` or `all: true`. They are mutually exclusive.
 
+The `push` action accepts only:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `path` | `string` | `process.cwd()` | Repository path |
+| `verbose` | `boolean` | `false` | Stream git output to the terminal |
+
+`push` returns `Pushed to <remote>/<remote-branch>` on success and `Push skipped: ...` or `Push failed: ...` when it resolves without publishing. The combined actions return `Committed and pushed to ...` on success, `Committed; push skipped/failed: ...` on soft warnings, and `Nothing to commit` when `skipEmpty` resolves an empty run.
+
 ## Pre-commit hooks
 
-The commit runs through real `git commit`, so git executes configured hooks
-itself (`pre-commit` first) and honors `core.hooksPath`. The action never runs
+The `commit`, `commit-and-push` and `gitCommit` actions run through real
+`git commit`, so git executes configured hooks itself (`pre-commit` first)
+and honors `core.hooksPath`. The commit step never runs
 `--no-verify` and never implements a manual hook runner; a commit accepted
 through a hook behaves exactly like a commit without hooks.
 
@@ -117,12 +151,13 @@ rejected the commit. The recommended recovery is to fix the reported issues
 and rerun the action; `--no-verify` is never the suggested fix.
 
 `verbose: true` keeps the live streaming of git output to the terminal and
-reports the same actionable error.
+reports the same actionable error. The standalone `push` action does not create
+a commit and does not execute pre-commit hooks.
 
 ## Push behavior
 
-After a successful commit, the action publishes only the active branch to the
-upstream destination configured for that branch. It reads the destination from
+The `push` action and the combined actions publish only the active branch to the
+upstream destination configured for that branch. They read the destination from
 git itself:
 
 ```bash
@@ -140,7 +175,8 @@ configuration.
 
 The push is skipped with a clear warning, and no destination is invented, when:
 
-- there was nothing to commit (`skipEmpty`);
+- the combined actions see nothing to commit (`skipEmpty`) and skip the push
+  before staging anything;
 - `HEAD` is detached (no branch to publish);
 - the active branch has no configured upstream (`branch.<name>.remote` /
   `branch.<name>.merge`);
@@ -149,17 +185,22 @@ The push is skipped with a clear warning, and no destination is invented, when:
 
 If the push itself fails (network, rejection), the action resolves with a
 warning instead of failing the generator. In every skip or failure case the
-local commit is preserved.
+local repository is preserved: commits from the commit action are kept and the
+push action leaves HEAD untouched.
 
 ## Schema export
 
 ```ts
-import { gitCommitConfigSchema } from "plop-pack-git-commit";
+import { gitCommitConfigSchema, gitPushConfigSchema } from "plop-actions-git";
 
 const result = gitCommitConfigSchema.safeParse({
   path: process.cwd(),
   message: "feat: add generator output",
   all: true,
+});
+
+const pushResult = gitPushConfigSchema.safeParse({
+  path: process.cwd(),
 });
 ```
 

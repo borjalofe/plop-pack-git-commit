@@ -1,5 +1,5 @@
 {
-  "name": "plop-pack-git-commit",
+  "name": "plop-actions-git",
   "version": "0.1.1",
   "description": "PlopJS action pack to stage, commit, and push changes with git",
   "type": "module",
