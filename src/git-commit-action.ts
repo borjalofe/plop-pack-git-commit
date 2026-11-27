@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { commitStagedChanges } from "./lib/git-commit.js";
 import { pushCurrentBranch } from "./lib/git-push.js";
 import { runGit } from "./lib/run-git.js";
 import { type GitCommitActionConfig, gitCommitConfigSchema } from "./schemas/git-commit-config.js";
@@ -29,6 +30,7 @@ async function hasChangesToStage(repoPath: string, verbose: boolean): Promise<bo
   const { stdout } = await runGit(["status", "--porcelain"], {
     cwd: repoPath,
     verbose,
+    capture: true,
   });
   return stdout.trim().length > 0;
 }
@@ -42,18 +44,19 @@ async function stageFiles(
     await runGit(["add", "--", ...normalizeFiles(config.files)], {
       cwd: repoPath,
       verbose,
+      capture: true,
     });
     return;
   }
 
   if (config.all) {
-    await runGit(["add", "-A"], { cwd: repoPath, verbose });
+    await runGit(["add", "-A"], { cwd: repoPath, verbose, capture: true });
   }
 }
 
 async function hasStagedDiff(repoPath: string, verbose: boolean): Promise<boolean> {
   try {
-    await runGit(["diff", "--cached", "--quiet"], { cwd: repoPath, verbose });
+    await runGit(["diff", "--cached", "--quiet"], { cwd: repoPath, verbose, capture: true });
     return false;
   } catch (error) {
     if (error instanceof Error && error.message.includes("exited with code 1")) {
@@ -108,7 +111,7 @@ export async function gitCommitAction(
     throw new Error("Nothing to commit after staging");
   }
 
-  await runGit(["commit", "-m", message], { cwd: repoPath, verbose });
+  await commitStagedChanges(repoPath, message, verbose);
 
   const pushResult = await pushCurrentBranch(repoPath, verbose);
 

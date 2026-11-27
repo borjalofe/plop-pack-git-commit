@@ -93,6 +93,32 @@ This runs `git add -A` before committing.
 
 Provide either `files` or `all: true`. They are mutually exclusive.
 
+## Pre-commit hooks
+
+The commit runs through real `git commit`, so git executes configured hooks
+itself (`pre-commit` first) and honors `core.hooksPath`. The action never runs
+`--no-verify` and never implements a manual hook runner; a commit accepted
+through a hook behaves exactly like a commit without hooks.
+
+When git rejects the commit during the hook, the action fails with the hook's
+output and the recovery steps:
+
+```text
+git commit was rejected by the pre-commit hook (exit code 1).
+
+Fix the hook issues, inspect git status, re-stage any files the hook modified, then run the gitCommit action again.
+
+<hook stdout and stderr diagnostics>
+```
+
+A `git commit` failure that git itself raises without a hook rejection reports
+the git diagnostics and generic recovery steps instead of claiming the hook
+rejected the commit. The recommended recovery is to fix the reported issues
+and rerun the action; `--no-verify` is never the suggested fix.
+
+`verbose: true` keeps the live streaming of git output to the terminal and
+reports the same actionable error.
+
 ## Push behavior
 
 After a successful commit, the action publishes only the active branch to the
