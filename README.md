@@ -126,6 +126,34 @@ The `push` action accepts only:
 
 `push` returns `Pushed to <remote>/<remote-branch>` on success and `Push skipped: ...` or `Push failed: ...` when it resolves without publishing. The combined actions return `Committed and pushed to ...` on success, `Committed; push skipped/failed: ...` on soft warnings, and `Nothing to commit` when `skipEmpty` resolves an empty run.
 
+## Pre-commit hooks
+
+The `commit`, `commit-and-push` and `gitCommit` actions run through real
+`git commit`, so git executes configured hooks itself (`pre-commit` first)
+and honors `core.hooksPath`. The commit step never runs
+`--no-verify` and never implements a manual hook runner; a commit accepted
+through a hook behaves exactly like a commit without hooks.
+
+When git rejects the commit during the hook, the action fails with the hook's
+output and the recovery steps:
+
+```text
+git commit was rejected by the pre-commit hook (exit code 1).
+
+Fix the hook issues, inspect git status, re-stage any files the hook modified, then run the gitCommit action again.
+
+<hook stdout and stderr diagnostics>
+```
+
+A `git commit` failure that git itself raises without a hook rejection reports
+the git diagnostics and generic recovery steps instead of claiming the hook
+rejected the commit. The recommended recovery is to fix the reported issues
+and rerun the action; `--no-verify` is never the suggested fix.
+
+`verbose: true` keeps the live streaming of git output to the terminal and
+reports the same actionable error. The standalone `push` action does not create
+a commit and does not execute pre-commit hooks.
+
 ## Push behavior
 
 The `push` action and the combined actions publish only the active branch to the

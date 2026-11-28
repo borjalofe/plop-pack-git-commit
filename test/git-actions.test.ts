@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import nodePlop from "node-plop";
@@ -91,6 +91,65 @@ describe("registered plop actions", () => {
     for (const name of ["commit", "push", "commit-and-push", "gitCommit"]) {
       expect(typeof plop.getActionType(name)).toBe("function");
     }
+  });
+
+  describe("hook integration", () => {
+    for (const name of ["commit", "commit-and-push", "gitCommit"]) {
+      it(`${name} reports hook rejection without advancing HEAD or the upstream`, async () => {
+        const { repoPath, bareDir } = await setUpPackageRepo("plop-git-actions-hook-");
+        await writeFile(path.join(repoPath, "tracked.txt"), "initial\n");
+        await commitAll(repoPath, "initial");
+        await runGit(["push", "-u", "origin", "main"], { cwd: repoPath });
+        const before = await runGit(["rev-parse", "HEAD"], { cwd: repoPath });
+        const hook = path.join(repoPath, ".git", "hooks", "pre-commit");
+        await writeFile(
+          hook,
+          "#!/bin/sh\nprintf 'HOOK_STDOUT\\n'\nprintf 'HOOK_STDERR\\n' >&2\nexit 1\n",
+        );
+        await chmod(hook, 0o755);
+        await writeFile(path.join(repoPath, "tracked.txt"), "pending\n");
+
+        const run = await action(name);
+        const result = Promise.resolve().then(() =>
+          run({}, { path: repoPath, message: "must reject", files: "tracked.txt" }),
+        );
+        await expect(result).rejects.toThrow(/pre-commit hook/);
+        await expect(result).rejects.toThrow("HOOK_STDOUT");
+        await expect(result).rejects.toThrow("HOOK_STDERR");
+        await expect(result).rejects.toThrow("inspect git status");
+        await expect(result).rejects.toThrow("re-stage");
+        const after = await runGit(["rev-parse", "HEAD"], { cwd: repoPath });
+        const remote = await runGit(["rev-parse", "refs/heads/main"], { cwd: bareDir });
+        expect(after.stdout).toBe(before.stdout);
+        expect(remote.stdout).toBe(before.stdout);
+        const staged = await runGit(["diff", "--cached", "--name-only"], { cwd: repoPath });
+        expect(staged.stdout.trim()).toBe("tracked.txt");
+        expect(await readFile(path.join(repoPath, "tracked.txt"), "utf8")).toBe("pending\n");
+      });
+    }
+
+    it("push ignores a rejecting pre-commit hook and preserves pending files and index", async () => {
+      const { repoPath, bareDir } = await setUpPackageRepo("plop-git-actions-push-hook-");
+      await writeFile(path.join(repoPath, "tracked.txt"), "initial\n");
+      await commitAll(repoPath, "initial");
+      await setUpstream(repoPath, "main", "origin", "refs/heads/main");
+      const before = await runGit(["rev-parse", "HEAD"], { cwd: repoPath });
+      const hook = path.join(repoPath, ".git", "hooks", "pre-commit");
+      await writeFile(hook, "#!/bin/sh\nprintf 'HOOK_MUST_NOT_RUN\\n' >&2\nexit 1\n");
+      await chmod(hook, 0o755);
+      await writeFile(path.join(repoPath, "tracked.txt"), "pending\n");
+      await runGit(["add", "tracked.txt"], { cwd: repoPath });
+      const indexBefore = await runGit(["diff", "--cached"], { cwd: repoPath });
+      const run = await action("push");
+      expect(await run({}, { path: repoPath })).toBe("Pushed to origin/main");
+      const after = await runGit(["rev-parse", "HEAD"], { cwd: repoPath });
+      const remote = await runGit(["rev-parse", "refs/heads/main"], { cwd: bareDir });
+      const indexAfter = await runGit(["diff", "--cached"], { cwd: repoPath });
+      expect(after.stdout).toBe(before.stdout);
+      expect(remote.stdout).toBe(before.stdout);
+      expect(indexAfter.stdout).toBe(indexBefore.stdout);
+      expect(await readFile(path.join(repoPath, "tracked.txt"), "utf8")).toBe("pending\n");
+    });
   });
 
   describe("commit action", () => {

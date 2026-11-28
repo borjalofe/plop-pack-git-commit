@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { commitStagedChanges } from "./git-commit.js";
 import { runGit } from "./run-git.js";
 
 /**
@@ -23,6 +24,7 @@ async function hasChangesToStage(repoPath: string, verbose: boolean): Promise<bo
   const { stdout } = await runGit(["status", "--porcelain"], {
     cwd: repoPath,
     verbose,
+    capture: true,
   });
   return stdout.trim().length > 0;
 }
@@ -36,18 +38,19 @@ async function stageFiles(
     await runGit(["add", "--", ...normalizeFiles(config.files)], {
       cwd: repoPath,
       verbose,
+      capture: true,
     });
     return;
   }
 
   if (config.all) {
-    await runGit(["add", "-A"], { cwd: repoPath, verbose });
+    await runGit(["add", "-A"], { cwd: repoPath, verbose, capture: true });
   }
 }
 
 async function hasStagedDiff(repoPath: string, verbose: boolean): Promise<boolean> {
   try {
-    await runGit(["diff", "--cached", "--quiet"], { cwd: repoPath, verbose });
+    await runGit(["diff", "--cached", "--quiet"], { cwd: repoPath, verbose, capture: true });
     return false;
   } catch (error) {
     if (error instanceof Error && error.message.includes("exited with code 1")) {
@@ -66,7 +69,8 @@ export type StageCommitConfig = {
 
 /**
  * Stage and commit in an existing git repository, shared by the `commit` and
- * combined `commit-and-push` actions.
+ * combined `commit-and-push` actions. Git executes hooks normally; rejected
+ * commits retain diagnostics and actionable recovery through commitStagedChanges.
  *
  * When `skipEmpty` is true and there is nothing to commit (working tree or
  * after staging), resolves with `false` instead of failing. When `skipEmpty` is
@@ -107,7 +111,7 @@ export async function stageChangesAndCommit(
     throw new Error("Nothing to commit after staging");
   }
 
-  await runGit(["commit", "-m", config.message], { cwd: repoPath, verbose });
+  await commitStagedChanges(repoPath, config.message, verbose);
 
   return true;
 }
